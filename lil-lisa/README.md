@@ -7,8 +7,8 @@ Lil Lisa provides several slash commands for admin use to help improve the knowl
 
 ## Visuals
 
-![Simple conversation](./visuals/simple_conversation.png)
-![Architecture/Diagram](./visuals/diagram.png)
+[Simple conversation](./visuals/simple_conversation.png)
+[Architecture/Diagram](./visuals/diagram.png)
 
 ## Installation
 
