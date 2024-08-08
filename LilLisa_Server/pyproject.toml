@@ -1,0 +1,30 @@
+[tool.isort]
+profile = "black"
+known_third_party = ["pydantic", "dotenv"]
+known_first_party = ["shared"]
+known_local_folder = ["src"]
+
+[tool.black]
+line-length = 119
+
+[tool.pylint.messages_control]
+max-line-length = 119
+disable = ["line-too-long", "import-error", "R0801"]
+ignored-classes = "scoped_session"
+
+[tool.pylint.MASTER]
+ignore-paths = ["^test/FOLDER_TO_IGNORE/.*$"]
+extension-pkg-whitelist = ["pydantic"]
+
+[tool.mypy]
+exclude = 'FOLDER_TO_IGNORE'
+
+[[tool.mypy.overrides]]
+module = [
+    "zendesk",
+    "utils"
+]
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["test"]

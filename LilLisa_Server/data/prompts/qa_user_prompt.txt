@@ -1,0 +1,12 @@
+###CONTEXT###
+<CONTEXT>
+
+###EXPERT ANSWERS###
+<EXPERT_ANSWERS>
+
+###CONVERSATION HISTORY###
+<CONVERSATION_HISTORY>
+
+Based on the context, expert answers, and conversation history, answer the question below step by step.
+Question: <QUESTION>
+Answer:

@@ -1,0 +1,28 @@
+# Use a base image with Python and required dependencies
+FROM continuumio/miniconda3:latest
+
+# prepare conda
+RUN conda update conda
+RUN conda update --all
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Update Conda and create the environment
+COPY environment.yml /app/
+RUN conda env create -f environment.yml
+
+# Copy the app code and files to the container
+COPY data /app/data
+COPY env /app/env
+COPY lancedb /app/lancedb
+COPY passwords /app/passwords
+COPY src /app/src
+
+RUN mkdir speedict
+
+# Expose any necessary ports (if applicable)
+# EXPOSE 8000
+
+# Define the command to run your app in release mode (so log level is INFO)
+CMD ["conda", "run", "-n", "LilLisa_Server", "uvicorn", "src.main:app", "--host=0.0.0.0", "--port", "8000"]

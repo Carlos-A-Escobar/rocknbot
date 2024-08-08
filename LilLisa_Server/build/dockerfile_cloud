@@ -1,0 +1,29 @@
+# Use a base image with Python and required dependencies
+FROM continuumio/miniconda3:latest
+
+# RUN apt-get update && \
+#     apt-get upgrade -y && \
+#     apt-get install -y git
+
+# prepare conda
+RUN conda update conda
+RUN conda update --all
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Update Conda and create the environment
+COPY ./build/environment.yml /app/
+RUN conda env create -f environment.yml
+
+# Copy the app code and files to the container
+COPY data /app/data
+COPY ./build/env /app/env
+COPY lancedb /app/lancedb
+COPY passwords /app/passwords
+COPY src /app/src
+
+RUN mkdir speedict
+
+# Set the CMD to your handler
+CMD ["conda", "run", "-n", "LilLisa_Server", "uvicorn", "src.main:app", "--host=0.0.0.0"]
