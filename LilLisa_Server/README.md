@@ -75,3 +75,6 @@ This project is currently closed source
 ## Project status
 
 Under active development
+
+## Socials
+- [Link to Medium.com blog](https://medium.com/@carlos-a-escobar/deep-dive-into-the-best-chunking-indexing-method-for-rag-5921d29f138f)
