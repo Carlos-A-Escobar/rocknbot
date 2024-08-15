@@ -49,6 +49,7 @@ from src.agent_and_tools import (
     handle_user_answer,
     improve_query,
     update_retriever,
+    get_matching_versions
 )
 from src.lillisa_server_context import LOCALE, LilLisaServerContext
 from src.llama_index_lancedb_vector_store import LanceDBVectorStore
@@ -376,6 +377,13 @@ async def update_golden_qa_pairs(product: str, encrypted_key: str) -> str:
         documents = []
         qa_pattern = re.compile(r"Question:\s*(.*?)\nAnswer:\s*(.*)", re.DOTALL)
 
+        if product == "IDDM":
+            product_versions = ["v7.4", "v8.0", "v8.1"]
+            version_pattern = re.compile(r"v?\d+\.\d+", re.IGNORECASE)
+        else:
+            product_versions = ["iap-2.0", "iap-2.2", "iap-3.0", "descartes", "descartes-dev", "version-1.5", "version-16"]
+            version_pattern = re.compile(r"\b(?:IAP[- ]\d+\.\d+|version[- ]\d+\.\d+|descartes(?:-dev)?)\b", re.IGNORECASE)
+
         for pair in qa_pairs:
             match = qa_pattern.search(pair)
             if match:
@@ -383,19 +391,8 @@ async def update_golden_qa_pairs(product: str, encrypted_key: str) -> str:
                 answer = match.group(2).strip()
                 document = Document(text=f"{question}")
                 document.metadata["answer"] = answer
-                if product == "IDDM":
-                    product_versions = ["v7.4", "v8.0", "v8.1"]
-                    version_pattern = re.compile(r"v?\d+\.\d+", re.IGNORECASE)
-                    extracted_versions = version_pattern.findall(question)
-                    matched_versions = []
-                    for extracted_version in extracted_versions:
-                        closest_match = get_close_matches(extracted_version, product_versions, n=1)
-                        if closest_match:
-                            matched_versions.append(closest_match[0])
-                    if matched_versions:
-                        document.metadata["version"] = matched_versions[0]
-                    else:
-                        document.metadata["version"] = "none"
+                matched_versions = get_matching_versions(question, product_versions, version_pattern)
+                document.metadata["version"] = matched_versions[0] if matched_versions else "none"
                 document.excluded_embed_metadata_keys.append("version")
                 document.excluded_embed_metadata_keys.append("answer")
                 documents.append(document)
@@ -547,10 +544,7 @@ async def rebuild_docs(encrypted_key: str) -> str:
                 ("https://github.com/radiantlogic-v8/documentation-eoc.git", ["latest"]),
             ],
             "IDA": [
-                (
-                    "https://github.com/radiantlogic-v8/documentation-identity-analytics.git",
-                    ["iap-2.0", "iap-2.2", "iap-3.0"],
-                ),
+                ("https://github.com/radiantlogic-v8/documentation-identity-analytics.git", ["iap-2.0", "iap-2.2", "iap-3.0"]),
                 ("https://github.com/radiantlogic-v8/documentation-ia-product.git", ["descartes", "descartes-dev"]),
                 ("https://github.com/radiantlogic-v8/documentation-ia-selfmanaged.git", ["version-1.5", "version-16"]),
             ],

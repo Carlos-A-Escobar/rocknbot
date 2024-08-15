@@ -123,17 +123,17 @@ ida_qa_pairs_table = db.open_table("IDA_QA_PAIRS")
 iddm_vector_store = LanceDBVectorStore.from_table(iddm_table)
 ida_vector_store = LanceDBVectorStore.from_table(ida_table)
 iddm_qa_pairs_vector_store = LanceDBVectorStore.from_table(iddm_qa_pairs_table, "vector")
-ida_qa_pairs_vector_store = LanceDBVectorStore.from_table(ida_qa_pairs_table)
+ida_qa_pairs_vector_store = LanceDBVectorStore.from_table(ida_qa_pairs_table, "vector")
 IDDM_INDEX = VectorStoreIndex.from_vector_store(vector_store=iddm_vector_store)
-ida_index = VectorStoreIndex.from_vector_store(vector_store=ida_vector_store)
+IDA_INDEX = VectorStoreIndex.from_vector_store(vector_store=ida_vector_store)
 IDDM_QA_PAIRS_INDEX = VectorStoreIndex.from_vector_store(vector_store=iddm_qa_pairs_vector_store)
-ida_qa_pairs_index = VectorStoreIndex.from_vector_store(vector_store=ida_qa_pairs_vector_store)
+IDA_QA_PAIRS_INDEX = VectorStoreIndex.from_vector_store(vector_store=ida_qa_pairs_vector_store)
 
 
 IDDM_RETRIEVER = IDDM_INDEX.as_retriever(similarity_top_k=50)
-IDA_RETRIEVER = ida_index.as_retriever(similarity_top_k=50)
+IDA_RETRIEVER = IDA_INDEX.as_retriever(similarity_top_k=50)
 IDDM_QA_PAIRS_RETRIEVER = IDDM_QA_PAIRS_INDEX.as_retriever(similarity_top_k=8)
-IDA_QA_PAIRS_RETRIEVER = ida_qa_pairs_index.as_retriever(similarity_top_k=8)
+IDA_QA_PAIRS_RETRIEVER = IDA_QA_PAIRS_INDEX.as_retriever(similarity_top_k=8)
 
 
 class PRODUCT(str, Enum):
@@ -215,29 +215,34 @@ def answer_from_document_retrieval(
     if product_enum == PRODUCT.IDDM:
         product_versions = ["v7.4", "v8.0", "v8.1"]
         version_pattern = re.compile(r"v?\d+\.\d+", re.IGNORECASE)
-        extracted_versions = version_pattern.findall(query)
-        matched_versions = []
-        for extracted_version in extracted_versions:
-            closest_match = get_close_matches(extracted_version, product_versions, n=1)
-            if closest_match:
-                matched_versions.append(closest_match[0])
-        if matched_versions:
-            qa_system_prompt += f"\n10. Mention the product version(s) you used to craft your response were '{' and '.join(matched_versions)}'"
-            lance_filter_documents = " OR ".join(f"(metadata.version = '{version}')" for version in matched_versions)
-            lance_filter_qa_pairs = "(metadata.version = 'none') OR " + lance_filter_documents
-            document_retriever = IDDM_INDEX.as_retriever(
-                vector_store_kwargs={"where": lance_filter_documents}, similarity_top_k=50
-            )
-            qa_pairs_retriever = IDDM_QA_PAIRS_INDEX.as_retriever(
-                vector_store_kwargs={"where": lance_filter_qa_pairs}, similarity_top_k=8
-            )
-        else:
-            qa_system_prompt += "\n10. At the beginning of your response, mention that because a specific product version was not specified, information from all available versions was used."
-            document_retriever = IDDM_RETRIEVER
-            qa_pairs_retriever = IDDM_QA_PAIRS_RETRIEVER
+        document_index = IDDM_INDEX
+        qa_pairs_index = IDDM_QA_PAIRS_INDEX
+        default_document_retriever = IDDM_RETRIEVER
+        default_qa_pairs_retriever = IDDM_QA_PAIRS_RETRIEVER
     else:
-        document_retriever = IDA_RETRIEVER
-        qa_pairs_retriever = IDA_QA_PAIRS_RETRIEVER
+        product_versions = ["iap-2.0", "iap-2.2", "iap-3.0", "descartes", "descartes-dev", "version-1.5", "version-16"]
+        version_pattern = re.compile(r"\b(?:IAP[- ]\d+\.\d+|version[- ]\d+\.\d+|descartes(?:-dev)?)\b", re.IGNORECASE)
+        document_index = IDA_INDEX
+        qa_pairs_index = IDA_QA_PAIRS_INDEX
+        default_document_retriever = IDA_RETRIEVER
+        default_qa_pairs_retriever = IDA_QA_PAIRS_RETRIEVER
+
+    matched_versions = get_matching_versions(query, product_versions, version_pattern)
+
+    if matched_versions:
+        qa_system_prompt += f"\n10. Mention the product version(s) you used to craft your response were '{' and '.join(matched_versions)}'"
+        lance_filter_documents = " OR ".join(f"(metadata.version = '{version}')" for version in matched_versions)
+        lance_filter_qa_pairs = "(metadata.version = 'none') OR " + lance_filter_documents
+        document_retriever = document_index.as_retriever(
+            vector_store_kwargs={"where": lance_filter_documents}, similarity_top_k=50
+        )
+        qa_pairs_retriever = qa_pairs_index.as_retriever(
+            vector_store_kwargs={"where": lance_filter_qa_pairs}, similarity_top_k=8
+        )
+    else:
+        qa_system_prompt += "\n10. At the beginning of your response, mention that because a specific product version was not specified, information from all available versions was used."
+        document_retriever = default_document_retriever
+        qa_pairs_retriever = default_qa_pairs_retriever
 
     qa_nodes = qa_pairs_retriever.retrieve(query)
     exact_qa_nodes = []
@@ -290,3 +295,17 @@ def answer_from_document_retrieval(
         for idx, node in enumerate(potentially_relevant_qa_nodes, start=1):
             response += f"\nMatch {idx}:\nQuestion: {node.text}\nAnswer: {node.metadata['answer']}\n"
     return response
+
+
+def get_matching_versions(query, product_versions, version_pattern):
+    """
+    Not a tool for the ReAct agent but instead a helper function for "answer_from_document_retrieval.
+    Helps extract a version from a query.
+    """
+    extracted_versions = version_pattern.findall(query)
+    matched_versions = []
+    for extracted_version in extracted_versions:
+        closest_match = get_close_matches(extracted_version, product_versions, n=1, cutoff=0.4)
+        if closest_match:
+            matched_versions.append(closest_match[0])
+    return matched_versions
