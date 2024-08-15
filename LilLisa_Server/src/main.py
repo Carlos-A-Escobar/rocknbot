@@ -576,7 +576,6 @@ async def rebuild_docs(encrypted_key: str) -> str:
                 git.Repo.clone_from(repo_url, target_dir, branch=branch)
                 return True
             except Exception:
-                # print(f"Failed to clone {repo_url}: {e}")
                 return False
 
         # Initialize model and pipeline
@@ -599,6 +598,8 @@ async def rebuild_docs(encrypted_key: str) -> str:
             "file_size",
             "creation_date",
             "last_modified_date",
+            "version",
+            "github_url"
         ]
 
         all_nodes = []
@@ -626,7 +627,7 @@ async def rebuild_docs(encrypted_key: str) -> str:
                                 time.sleep(10)
                             else:
                                 failed_clone_messages += (
-                                    "Max retries reached. Failed to clone {repo_url} into {target_dir}. "
+                                    "Max retries reached. Failed to clone {repo_url} ({branch}) into {target_dir}. "
                                 )
 
                     md_files = find_md_files(target_dir)
@@ -650,6 +651,11 @@ async def rebuild_docs(encrypted_key: str) -> str:
                         for doc in documents:
                             for label, value in metadata.items():
                                 doc.metadata[label] = value
+                            file_path = doc.metadata['file_path']
+                            relative_path = file_path.replace(f'docs/{product}/', '')
+                            github_url = 'https://github.com/radiantlogic-v8/' + relative_path
+                            github_url = github_url.replace(repo_name, repo_name + '/blob')
+                            doc.metadata['github_url'] = github_url
                         nodes = pipeline.run(documents=documents, in_place=False)
                         for node in nodes:
                             node.excluded_llm_metadata_keys = excluded_metadata_keys
@@ -662,8 +668,6 @@ async def rebuild_docs(encrypted_key: str) -> str:
             nodes_to_remove = []
 
             for node in all_nodes:
-                node.excluded_llm_metadata_keys = excluded_metadata_keys
-                node.excluded_embed_metadata_keys = excluded_metadata_keys
                 length = len(enc.encode(node.text))
                 if length > 7000:
                     nodes_to_remove.append(node)

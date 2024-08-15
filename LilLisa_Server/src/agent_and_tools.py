@@ -270,10 +270,7 @@ def answer_from_document_retrieval(
         response += "\n\nAfter searching through the documentation database, this was found:\n"
     nodes = document_retriever.retrieve(query)
     reranked_nodes = RERANKER.postprocess_nodes(nodes=nodes, query_str=query)[:10]
-    for node in reranked_nodes:
-        node.metadata["reference"] = (
-            node.metadata["title"] if node.metadata["title"].strip() else node.metadata["file_name"].split(".")[0]
-        )
+    useful_links = list(dict.fromkeys([node.metadata['github_url'] for node in reranked_nodes]))[:3]
     chunks = "\n\n".join(f"{node.text}" for node in reranked_nodes)
 
     user_prompt = QA_USER_PROMPT.replace("<CONTEXT>", chunks)
@@ -288,6 +285,9 @@ def answer_from_document_retrieval(
         .choices[0]
         .message.content
     )
+
+    response += "\n\nHere are some potentially helpful documentation links:\n"
+    response += "\n".join(f"- {link}" for link in useful_links)
 
     if potentially_relevant_qa_nodes and not relevant_qa_nodes:
         response += "\n\n\n"
