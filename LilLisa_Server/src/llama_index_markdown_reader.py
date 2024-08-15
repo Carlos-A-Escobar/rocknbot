@@ -6,9 +6,10 @@ Contains parser for md files.
 
 import re
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
 from fsspec import AbstractFileSystem
 from fsspec.implementations.local import LocalFileSystem
-from typing import Any, Dict, List, Optional, Tuple
 from llama_index.core.readers.base import BaseReader
 from llama_index.core.schema import Document
 
@@ -118,7 +119,5 @@ class MarkdownReader(BaseReader):
             if header is None:
                 results.append(Document(text=value, metadata=extra_info or {}))
             else:
-                results.append(
-                    Document(text=f"\n\n{header}\n{value}", metadata=extra_info or {})
-                )
+                results.append(Document(text=f"\n\n{header}\n{value}", metadata=extra_info or {}))
         return results

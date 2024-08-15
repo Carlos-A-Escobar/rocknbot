@@ -10,14 +10,13 @@ import time
 import traceback
 import zipfile
 from contextlib import asynccontextmanager
+from difflib import get_close_matches
 from typing import Optional
 
 import git
 import jwt
 import tiktoken
 import uvicorn  # type: ignore
-
-import lancedb
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
@@ -39,19 +38,21 @@ from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
 from llama_index.core.tools import FunctionTool
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI as OpenAI_Llama
+
+import lancedb
 from speedict import Rdict  # pylint: disable=no-name-in-module
 
 from src import utils
 from src.agent_and_tools import (
     PRODUCT,
-    update_retriever,
     answer_from_document_retrieval,
     handle_user_answer,
     improve_query,
+    update_retriever,
 )
 from src.lillisa_server_context import LOCALE, LilLisaServerContext
-from src.llama_index_markdown_reader import MarkdownReader
 from src.llama_index_lancedb_vector_store import LanceDBVectorStore
+from src.llama_index_markdown_reader import MarkdownReader
 
 REACT_AGENT_PROMPT = None
 LANCEDB_FOLDERPATH = None
@@ -83,7 +84,6 @@ async def lifespan(_app: FastAPI):
     with open(react_agent_prompt_filepath, "r", encoding="utf-8") as file:
         REACT_AGENT_PROMPT = file.read()
 
-
     if lancedb_folderpath := lillisa_server_env["LANCEDB_FOLDERPATH"]:
         LANCEDB_FOLDERPATH = str(lancedb_folderpath)
     else:
@@ -96,7 +96,6 @@ async def lifespan(_app: FastAPI):
         utils.logger.critical("%s not found", LANCEDB_FOLDERPATH)
         raise NotImplementedError(f"{LANCEDB_FOLDERPATH} not found")
 
-
     if authentication_key := lillisa_server_env["AUTHENTICATION_KEY"]:
         AUTHENTICATION_KEY = str(authentication_key)
     else:
@@ -104,14 +103,12 @@ async def lifespan(_app: FastAPI):
         utils.logger.critical("AUTHENTICATION_KEY not found in lillisa_server.env")
         raise ValueError("AUTHENTICATION_KEY not found in lillisa_server.env")
 
-
     if documentation_folderpath := lillisa_server_env["DOCUMENTATION_FOLDERPATH"]:
         DOCUMENTATION_FOLDERPATH = str(documentation_folderpath)
     else:
         traceback.print_exc()
         utils.logger.critical("DOCUMENTATION_FOLDERPATH not found in lillisa_server.env")
         raise ValueError("DOCUMENTATION_FOLDERPATH not found in lillisa_server.env")
-    
 
     if qa_pairs_github_repo_url := lillisa_server_env["QA_PAIRS_GITHUB_REPO_URL"]:
         QA_PAIRS_GITHUB_REPO_URL = str(qa_pairs_github_repo_url)
@@ -119,7 +116,6 @@ async def lifespan(_app: FastAPI):
         traceback.print_exc()
         utils.logger.critical("QA_PAIRS_GITHUB_REPO_URL not found in lillisa_server.env")
         raise ValueError("QA_PAIRS_GITHUB_REPO_URL not found in lillisa_server.env")
-    
 
     if qa_pairs_folderpath := lillisa_server_env["QA_PAIRS_FOLDERPATH"]:
         QA_PAIRS_FOLDERPATH = str(qa_pairs_folderpath)
@@ -212,11 +208,11 @@ async def invoke(session_id: str, locale: str, product: str, nl_query: str, is_e
         for poster, message in conversation_history_list:
             conversation_history += f"{poster}: {message}\n"
 
-        handle_user_answer_tool = FunctionTool.from_defaults(fn=handle_user_answer)
         improve_query_tool = FunctionTool.from_defaults(fn=improve_query)
         answer_from_document_retrieval_tool = FunctionTool.from_defaults(
             fn=answer_from_document_retrieval, return_direct=True
         )
+        handle_user_answer_tool = FunctionTool.from_defaults(fn=handle_user_answer, return_direct=True)
 
         llm = OpenAI_Llama(model="gpt-4o-mini")
         react_agent = ReActAgent.from_tools(
@@ -360,7 +356,7 @@ async def update_golden_qa_pairs(product: str, encrypted_key: str) -> str:
             shutil.rmtree(QA_PAIRS_FOLDERPATH)
         git.Repo.clone_from(QA_PAIRS_GITHUB_REPO_URL, QA_PAIRS_FOLDERPATH)
         filepath = f"{QA_PAIRS_FOLDERPATH}/{product.lower()}_qa_pairs.md"
-        with open(filepath, 'r') as file:
+        with open(filepath, "r", encoding="utf-8") as file:
             file_content = file.read()
 
         db = lancedb.connect(LANCEDB_FOLDERPATH)
@@ -385,7 +381,23 @@ async def update_golden_qa_pairs(product: str, encrypted_key: str) -> str:
             if match:
                 question = match.group(1).strip()
                 answer = match.group(2).strip()
-                document = Document(text=f"Question: {question}\nAnswer: {answer}")
+                document = Document(text=f"{question}")
+                document.metadata["answer"] = answer
+                if product == "IDDM":
+                    product_versions = ["v7.4", "v8.0", "v8.1"]
+                    version_pattern = re.compile(r"v?\d+\.\d+", re.IGNORECASE)
+                    extracted_versions = version_pattern.findall(question)
+                    matched_versions = []
+                    for extracted_version in extracted_versions:
+                        closest_match = get_close_matches(extracted_version, product_versions, n=1)
+                        if closest_match:
+                            matched_versions.append(closest_match[0])
+                    if matched_versions:
+                        document.metadata["version"] = matched_versions[0]
+                    else:
+                        document.metadata["version"] = "none"
+                document.excluded_embed_metadata_keys.append("version")
+                document.excluded_embed_metadata_keys.append("answer")
                 documents.append(document)
 
         splitter = SentenceSplitter(chunk_size=10000)
@@ -531,12 +543,13 @@ async def rebuild_docs(encrypted_key: str) -> str:
 
         product_repos_dict = {
             "IDDM": [
-                ("https://github.com/radiantlogic-v8/documentation-new.git", ["v7.4", "v8.0", "v8.1", "r1-saas"]),
+                ("https://github.com/radiantlogic-v8/documentation-new.git", ["v7.4", "v8.0", "v8.1"]),
                 ("https://github.com/radiantlogic-v8/documentation-eoc.git", ["latest"]),
             ],
             "IDA": [
                 (
-                    "https://github.com/radiantlogic-v8/documentation-identity-analytics.git", ["iap-2.0", "iap-2.2", "iap-3.0"],
+                    "https://github.com/radiantlogic-v8/documentation-identity-analytics.git",
+                    ["iap-2.0", "iap-2.2", "iap-3.0"],
                 ),
                 ("https://github.com/radiantlogic-v8/documentation-ia-product.git", ["descartes", "descartes-dev"]),
                 ("https://github.com/radiantlogic-v8/documentation-ia-selfmanaged.git", ["version-1.5", "version-16"]),

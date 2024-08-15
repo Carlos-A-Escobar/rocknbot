@@ -91,12 +91,10 @@ Under active development
 
 ## Future Enhancements
 
-- Version-specific answers
 - Response streaming
 - Return screenshots/images with answers
 - Allow users to provide screenshots with their questions
 - Let users Direct Message the bot for Question-Answering
-- Refine the handling of expert answers in answer synthesis
 
 ## Socials
 - [Link to Medium.com blog](https://medium.com/@carlos-a-escobar/deep-dive-into-the-best-chunking-indexing-method-for-rag-5921d29f138f)

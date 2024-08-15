@@ -1,10 +1,11 @@
 """LanceDB vector store with modifications."""
 
-import os
 import logging
-from typing import Any, List, Optional
+import os
 import warnings
+from typing import Any, List, Optional
 
+import lancedb.remote.table  # type: ignore
 import lancedb.rerankers
 import numpy as np
 from llama_index.core.bridge.pydantic import PrivateAttr
@@ -16,10 +17,10 @@ from llama_index.core.schema import (
     TextNode,
 )
 from llama_index.core.vector_stores.types import (
-    MetadataFilters,
-    FilterOperator,
-    FilterCondition,
     BasePydanticVectorStore,
+    FilterCondition,
+    FilterOperator,
+    MetadataFilters,
     VectorStoreQuery,
     VectorStoreQueryResult,
 )
@@ -30,14 +31,12 @@ from llama_index.core.vector_stores.utils import (
     metadata_dict_to_node,
     node_to_metadata_dict,
 )
+from llama_index.vector_stores.lancedb.util import sql_operator_mapper
 from pandas import DataFrame
 
 import lancedb
-import lancedb.remote.table  # type: ignore
 
-from llama_index.vector_stores.lancedb.util import sql_operator_mapper
 _logger = logging.getLogger(__name__)
-
 
 
 def _to_lance_filter(standard_filters: MetadataFilters, metadata_keys: list) -> Any:
@@ -47,24 +46,15 @@ def _to_lance_filter(standard_filters: MetadataFilters, metadata_keys: list) -> 
         key = filter.key
         if filter.key in metadata_keys:
             key = f"metadata.{filter.key}"
-        if (
-            filter.operator == FilterOperator.TEXT_MATCH
-            or filter.operator == FilterOperator.NE
-        ):
-            filters.append(
-                key + sql_operator_mapper[filter.operator] + f"'%{filter.value}%'"
-            )
+        if filter.operator == FilterOperator.TEXT_MATCH or filter.operator == FilterOperator.NE:
+            filters.append(key + sql_operator_mapper[filter.operator] + f"'%{filter.value}%'")
         if isinstance(filter.value, list):
             val = ",".join(filter.value)
             filters.append(key + sql_operator_mapper[filter.operator] + f"({val})")
         elif isinstance(filter.value, int):
-            filters.append(
-                key + sql_operator_mapper[filter.operator] + f"{filter.value}"
-            )
+            filters.append(key + sql_operator_mapper[filter.operator] + f"{filter.value}")
         else:
-            filters.append(
-                key + sql_operator_mapper[filter.operator] + f"'{filter.value!s}'"
-            )
+            filters.append(key + sql_operator_mapper[filter.operator] + f"'{filter.value!s}'")
 
     if standard_filters.condition == FilterCondition.OR:
         return " OR ".join(filters)
@@ -191,16 +181,12 @@ class LanceDBVectorStore(BasePydanticVectorStore):
         elif reranker is None:
             self._reranker = None
         else:
-            raise ValueError(
-                "`reranker` has to be a lancedb.rerankers.Reranker object."
-            )
+            raise ValueError("`reranker` has to be a lancedb.rerankers.Reranker object.")
 
         if isinstance(connection, lancedb.db.LanceDBConnection):
             self._connection = connection
         elif isinstance(connection, str):
-            raise ValueError(
-                "`connection` has to be a lancedb.db.LanceDBConnection object."
-            )
+            raise ValueError("`connection` has to be a lancedb.db.LanceDBConnection object.")
         else:
             if api_key is None and os.getenv("LANCE_API_KEY") is None:
                 if uri.startswith("db://"):
@@ -210,22 +196,14 @@ class LanceDBVectorStore(BasePydanticVectorStore):
             else:
                 if "db://" not in uri:
                     self._connection = lancedb.connect(uri)
-                    warnings.warn(
-                        "api key provided with local uri. The data will be stored locally"
-                    )
-                self._connection = lancedb.connect(
-                    uri, api_key=api_key or os.getenv("LANCE_API_KEY"), region=region
-                )
+                    warnings.warn("api key provided with local uri. The data will be stored locally")
+                self._connection = lancedb.connect(uri, api_key=api_key or os.getenv("LANCE_API_KEY"), region=region)
 
         if table is not None:
             try:
-                assert isinstance(
-                    table, (lancedb.db.LanceTable, lancedb.remote.table.RemoteTable)
-                )
+                assert isinstance(table, (lancedb.db.LanceTable, lancedb.remote.table.RemoteTable))
                 self._table = table
-                self._table_name = (
-                    table.name if hasattr(table, "name") else "remote_table"
-                )
+                self._table_name = table.name if hasattr(table, "name") else "remote_table"
             except AssertionError:
                 raise ValueError(
                     "`table` has to be a lancedb.db.LanceTable or lancedb.remote.table.RemoteTable object."
@@ -256,24 +234,20 @@ class LanceDBVectorStore(BasePydanticVectorStore):
         return self._connection
 
     @classmethod
-    def from_table(cls, table: Any) -> "LanceDBVectorStore":
+    def from_table(cls, table: Any, query_type: Optional[str] = "hybrid") -> "LanceDBVectorStore":
         """Create instance from table."""
         try:
-            if not isinstance(
-                table, (lancedb.db.LanceTable, lancedb.remote.table.RemoteTable)
-            ):
+            if not isinstance(table, (lancedb.db.LanceTable, lancedb.remote.table.RemoteTable)):
                 raise Exception("argument is not lancedb table instance")
-            return cls(table=table)
-        except Exception as e:
+            return cls(table=table, query_type=query_type)
+        except Exception:
             print("ldb version", lancedb.__version__)
             raise
 
     def _add_reranker(self, reranker: lancedb.rerankers.Reranker) -> None:
         """Add a reranker to an existing vector store."""
         if reranker is None:
-            raise ValueError(
-                "`reranker` has to be a lancedb.rerankers.Reranker object."
-            )
+            raise ValueError("`reranker` has to be a lancedb.rerankers.Reranker object.")
         self._reranker = reranker
 
     def _table_exists(self, tbl_name: Optional[str] = None) -> bool:
@@ -328,9 +302,7 @@ class LanceDBVectorStore(BasePydanticVectorStore):
         ids = []
 
         for node in nodes:
-            metadata = node_to_metadata_dict(
-                node, remove_text=False, flat_metadata=self.flat_metadata
-            )
+            metadata = node_to_metadata_dict(node, remove_text=False, flat_metadata=self.flat_metadata)
             if not self._metadata_keys:
                 self._metadata_keys = list(metadata.keys())
             append_data = {
@@ -344,9 +316,7 @@ class LanceDBVectorStore(BasePydanticVectorStore):
             ids.append(node.node_id)
 
         if self._table is None:
-            self._table = self._connection.create_table(
-                self._table_name, data, mode=self.mode
-            )
+            self._table = self._connection.create_table(self._table_name, data, mode=self.mode)
         else:
             if self.api_key is None:
                 self._table.add(data, mode="append")
@@ -401,7 +371,7 @@ class LanceDBVectorStore(BasePydanticVectorStore):
             where = kwargs.pop("where", None)
 
         if node_ids is not None:
-            where = f'id in ("' + '","'.join(node_ids) + '")'
+            where = 'id in ("' + '","'.join(node_ids) + '")'
 
         results = self._table.search().where(where).to_pandas()
 
@@ -413,9 +383,7 @@ class LanceDBVectorStore(BasePydanticVectorStore):
                 node.embedding = list(item[self.vector_column_name])
             except Exception:
                 # deprecated legacy logic for backward compatibility
-                _logger.debug(
-                    "Failed to parse Node metadata, fallback to legacy logic."
-                )
+                _logger.debug("Failed to parse Node metadata, fallback to legacy logic.")
                 if item.metadata:
                     metadata, node_info, _relation = legacy_metadata_dict_to_node(
                         item.metadata, text_key=self.text_key
@@ -429,9 +397,7 @@ class LanceDBVectorStore(BasePydanticVectorStore):
                     start_char_idx=node_info.get("start", None),
                     end_char_idx=node_info.get("end", None),
                     relationships={
-                        NodeRelationship.SOURCE: RelatedNodeInfo(
-                            node_id=item[self.doc_id_key]
-                        ),
+                        NodeRelationship.SOURCE: RelatedNodeInfo(node_id=item[self.doc_id_key]),
                     },
                 )
 
@@ -469,9 +435,7 @@ class LanceDBVectorStore(BasePydanticVectorStore):
                     "Please use a local table for FTS/Hybrid search."
                 )
             if self._fts_index is None:
-                self._fts_index = self._table.create_fts_index(
-                    self.text_key, replace=True
-                )
+                self._fts_index = self._table.create_fts_index(self.text_key, replace=True)
 
             if query_type == "hybrid":
                 _query = (query.query_embedding, query.query_str)
@@ -485,8 +449,9 @@ class LanceDBVectorStore(BasePydanticVectorStore):
                 query=_query,
                 vector_column_name=self.vector_column_name,
             )
+            .metric("cosine")
             .limit(query.similarity_top_k * self.overfetch_factor)
-            .where(where)
+            .where(where, prefilter=True)
         )
 
         if query_type != "fts":
@@ -511,9 +476,7 @@ class LanceDBVectorStore(BasePydanticVectorStore):
                 node.embedding = list(item[self.vector_column_name])
             except Exception:
                 # deprecated legacy logic for backward compatibility
-                _logger.debug(
-                    "Failed to parse Node metadata, fallback to legacy logic."
-                )
+                _logger.debug("Failed to parse Node metadata, fallback to legacy logic.")
                 if item.metadata:
                     metadata, node_info, _relation = legacy_metadata_dict_to_node(
                         item.metadata, text_key=self.text_key
@@ -527,9 +490,7 @@ class LanceDBVectorStore(BasePydanticVectorStore):
                     start_char_idx=node_info.get("start", None),
                     end_char_idx=node_info.get("end", None),
                     relationships={
-                        NodeRelationship.SOURCE: RelatedNodeInfo(
-                            node_id=item[self.doc_id_key]
-                        ),
+                        NodeRelationship.SOURCE: RelatedNodeInfo(node_id=item[self.doc_id_key]),
                     },
                 )
 

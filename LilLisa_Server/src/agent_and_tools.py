@@ -3,17 +3,20 @@ ReAct agent that handles a query in an intelligent manner
 """
 
 import os
+import re
 import traceback
+from difflib import get_close_matches
 from enum import Enum
 
-import lancedb
 from llama_index.core import Settings, VectorStoreIndex
 from llama_index.core.postprocessor import SentenceTransformerRerank
 from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.vector_stores.lancedb import LanceDBVectorStore
 from openai import OpenAI
 
+import lancedb
+
 from src import utils
+from src.llama_index_lancedb_vector_store import LanceDBVectorStore
 
 OPENAI_API_KEY = None
 IDDM_RETRIEVER = None
@@ -119,17 +122,17 @@ iddm_qa_pairs_table = db.open_table("IDDM_QA_PAIRS")
 ida_qa_pairs_table = db.open_table("IDA_QA_PAIRS")
 iddm_vector_store = LanceDBVectorStore.from_table(iddm_table)
 ida_vector_store = LanceDBVectorStore.from_table(ida_table)
-iddm_qa_pairs_vector_store = LanceDBVectorStore.from_table(iddm_qa_pairs_table)
+iddm_qa_pairs_vector_store = LanceDBVectorStore.from_table(iddm_qa_pairs_table, "vector")
 ida_qa_pairs_vector_store = LanceDBVectorStore.from_table(ida_qa_pairs_table)
-iddm_index = VectorStoreIndex.from_vector_store(vector_store=iddm_vector_store)
+IDDM_INDEX = VectorStoreIndex.from_vector_store(vector_store=iddm_vector_store)
 ida_index = VectorStoreIndex.from_vector_store(vector_store=ida_vector_store)
-iddm_qa_pairs_index = VectorStoreIndex.from_vector_store(vector_store=iddm_qa_pairs_vector_store)
+IDDM_QA_PAIRS_INDEX = VectorStoreIndex.from_vector_store(vector_store=iddm_qa_pairs_vector_store)
 ida_qa_pairs_index = VectorStoreIndex.from_vector_store(vector_store=ida_qa_pairs_vector_store)
 
 
-IDDM_RETRIEVER = iddm_index.as_retriever(similarity_top_k=50)
+IDDM_RETRIEVER = IDDM_INDEX.as_retriever(similarity_top_k=50)
 IDA_RETRIEVER = ida_index.as_retriever(similarity_top_k=50)
-IDDM_QA_PAIRS_RETRIEVER = iddm_qa_pairs_index.as_retriever(similarity_top_k=8)
+IDDM_QA_PAIRS_RETRIEVER = IDDM_QA_PAIRS_INDEX.as_retriever(similarity_top_k=8)
 IDA_QA_PAIRS_RETRIEVER = ida_qa_pairs_index.as_retriever(similarity_top_k=8)
 
 
@@ -148,6 +151,9 @@ class PRODUCT(str, Enum):
 
 
 def update_retriever(retriever_name, new_retriever):
+    """
+    Updates the reference to the appropriate retriever after "rebuild_docs" or "update_golden_qa_pairs" is called.
+    """
     global IDDM_RETRIEVER, IDA_RETRIEVER, IDDM_QA_PAIRS_RETRIEVER, IDA_QA_PAIRS_RETRIEVER
     if retriever_name == "IDDM":
         IDDM_RETRIEVER = new_retriever
@@ -201,42 +207,86 @@ def answer_from_document_retrieval(
     * generated_query should be the query generated from the 'improve_query_tool' if it was called before this tool, else parameter should be passed in as an empty string
     * conversation_history is the conversation history the user prompted the agent with
     """
+    response = ""
+    qa_system_prompt = QA_SYSTEM_PROMPT
     query = generated_query or original_query
 
     product_enum = PRODUCT.get_product(product)
     if product_enum == PRODUCT.IDDM:
-        document_retriever = IDDM_RETRIEVER
-        qa_pairs_retriever = IDDM_QA_PAIRS_RETRIEVER
+        product_versions = ["v7.4", "v8.0", "v8.1"]
+        version_pattern = re.compile(r"v?\d+\.\d+", re.IGNORECASE)
+        extracted_versions = version_pattern.findall(query)
+        matched_versions = []
+        for extracted_version in extracted_versions:
+            closest_match = get_close_matches(extracted_version, product_versions, n=1)
+            if closest_match:
+                matched_versions.append(closest_match[0])
+        if matched_versions:
+            qa_system_prompt += f"\n10. Mention the product version(s) you used to craft your response were '{' and '.join(matched_versions)}'"
+            lance_filter_documents = " OR ".join(f"(metadata.version = '{version}')" for version in matched_versions)
+            lance_filter_qa_pairs = "(metadata.version = 'none') OR " + lance_filter_documents
+            document_retriever = IDDM_INDEX.as_retriever(
+                vector_store_kwargs={"where": lance_filter_documents}, similarity_top_k=50
+            )
+            qa_pairs_retriever = IDDM_QA_PAIRS_INDEX.as_retriever(
+                vector_store_kwargs={"where": lance_filter_qa_pairs}, similarity_top_k=8
+            )
+        else:
+            qa_system_prompt += "\n10. At the beginning of your response, mention that because a specific product version was not specified, information from all available versions was used."
+            document_retriever = IDDM_RETRIEVER
+            qa_pairs_retriever = IDDM_QA_PAIRS_RETRIEVER
     else:
         document_retriever = IDA_RETRIEVER
         qa_pairs_retriever = IDA_QA_PAIRS_RETRIEVER
 
-    qa_nodes = []
-    if product_enum == PRODUCT.IDDM:
-        qa_nodes = qa_pairs_retriever.retrieve(query)
+    qa_nodes = qa_pairs_retriever.retrieve(query)
+    exact_qa_nodes = []
+    relevant_qa_nodes = []
+    potentially_relevant_qa_nodes = []
+
+    # Categorize the nodes
+    for node in qa_nodes:
+        if 0.9 <= node.score <= 1.0:
+            exact_qa_nodes.append(node)
+        elif 0.8 <= node.score < 0.9:
+            relevant_qa_nodes.append(node)
+        elif 0.7 <= node.score < 0.8:
+            potentially_relevant_qa_nodes.append(node)
+
+    if exact_qa_nodes:
+        response += "Found matching QA pairs that have been verified by an expert!\n"
+        for idx, node in enumerate(exact_qa_nodes, start=1):
+            response += f"\nMatch {idx}:\nQuestion: {node.text}\nAnswer: {node.metadata['answer']}\n"
+        return response
+    if relevant_qa_nodes:
+        response += "Here are some relevant QA pairs that have been verified by an expert!\n"
+        for idx, node in enumerate(relevant_qa_nodes, start=1):
+            response += f"\nMatch {idx}:\nQuestion: {node.text}\nAnswer: {node.metadata['answer']}\n"
+        response += "\n\nAfter searching through the documentation database, this was found:\n"
     nodes = document_retriever.retrieve(query)
     reranked_nodes = RERANKER.postprocess_nodes(nodes=nodes, query_str=query)[:10]
     for node in reranked_nodes:
         node.metadata["reference"] = (
             node.metadata["title"] if node.metadata["title"].strip() else node.metadata["file_name"].split(".")[0]
         )
-    chunks = "\n\n".join(
-        f"Version: {node.metadata['version']}\n" f"Content: \n{node.text}" for node in reranked_nodes if node.metadata["version"].strip()
-    )
-
-    expert_answers = "\n".join(f"Example:\n{node.text}" for node in qa_nodes)
+    chunks = "\n\n".join(f"{node.text}" for node in reranked_nodes)
 
     user_prompt = QA_USER_PROMPT.replace("<CONTEXT>", chunks)
-    user_prompt = user_prompt.replace("<EXPERT_ANSWERS>", expert_answers)
     user_prompt = user_prompt.replace("<CONVERSATION_HISTORY>", conversation_history)
     user_prompt = user_prompt.replace("<QUESTION>", original_query)
 
-    response = (
+    response += (
         OPENAI_CLIENT.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": QA_SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}],
+            messages=[{"role": "system", "content": qa_system_prompt}, {"role": "user", "content": user_prompt}],
         )
         .choices[0]
         .message.content
     )
+
+    if potentially_relevant_qa_nodes and not relevant_qa_nodes:
+        response += "\n\n\n"
+        response += "In addition, here are some potentially relevant QA pairs that have been verified by an expert!\n"
+        for idx, node in enumerate(potentially_relevant_qa_nodes, start=1):
+            response += f"\nMatch {idx}:\nQuestion: {node.text}\nAnswer: {node.metadata['answer']}\n"
     return response

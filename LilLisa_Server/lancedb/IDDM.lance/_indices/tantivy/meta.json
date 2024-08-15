@@ -5,42 +5,42 @@
   },
   "segments": [
     {
-      "segment_id": "4c88c3ef-73f6-4b10-9760-e5e7702e3941",
-      "max_doc": 6418,
+      "segment_id": "0993d5a7-c1ff-46b9-a062-4bd69f806e93",
+      "max_doc": 7918,
       "deletes": null
     },
     {
-      "segment_id": "e5d9dcec-6ec4-4724-aef6-242fa073d5db",
-      "max_doc": 4043,
+      "segment_id": "edcd605c-6274-4a07-b7f1-fb26879c7f65",
+      "max_doc": 1996,
       "deletes": null
     },
     {
-      "segment_id": "b33ca865-75a1-466e-96ae-2438c5ac79d3",
+      "segment_id": "0d4f1f35-3b1f-4673-8775-addbcdcfc5dc",
+      "max_doc": 548,
+      "deletes": null
+    },
+    {
+      "segment_id": "85e2d72b-6095-4e52-861e-7e161e7af03f",
       "max_doc": 1,
       "deletes": null
     },
     {
-      "segment_id": "e2658636-8fd8-4e6f-b86f-733e5604b512",
+      "segment_id": "c59f8596-ca5c-46b6-b1a8-c69a54bbe02b",
       "max_doc": 1,
       "deletes": null
     },
     {
-      "segment_id": "03a7cce2-7876-4786-b758-23c478dd5df6",
+      "segment_id": "9add1863-b34e-4199-a9ca-371b8dada88d",
       "max_doc": 1,
       "deletes": null
     },
     {
-      "segment_id": "ed5604ef-dd1c-4647-bd9c-15ec343b25e5",
+      "segment_id": "83328c32-e442-443e-a251-29dcfdbba6b2",
       "max_doc": 1,
       "deletes": null
     },
     {
-      "segment_id": "a0ed31d6-2cf2-49bd-8c4a-8bb14f3c5221",
-      "max_doc": 1,
-      "deletes": null
-    },
-    {
-      "segment_id": "5ecc5832-0125-45f5-947e-fe68251193d8",
+      "segment_id": "9d62dba3-a996-48fe-abb3-502bd5372b40",
       "max_doc": 1,
       "deletes": null
     }
