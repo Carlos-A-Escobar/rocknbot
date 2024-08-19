@@ -145,7 +145,7 @@ async def process_msg(event, say):
     text_items = text.split("> ")
     text = text_items[1] if len(text_items) == 2 else text_items[0]
     is_expert_answering = False
-    if user_id == expert_user_id and text.startswith("#Answer"):
+    if user_id == expert_user_id and text.lower().startswith("#answer"):
         text = text[7:].lstrip()
         is_expert_answering = True
 

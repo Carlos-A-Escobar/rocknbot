@@ -49,7 +49,9 @@ from src.agent_and_tools import (
     handle_user_answer,
     improve_query,
     update_retriever,
-    get_matching_versions
+    get_matching_versions,
+    IDDM_PRODUCT_VERSIONS,
+    IDA_PRODUCT_VERSIONS
 )
 from src.lillisa_server_context import LOCALE, LilLisaServerContext
 from src.llama_index_lancedb_vector_store import LanceDBVectorStore
@@ -61,12 +63,17 @@ AUTHENTICATION_KEY = None
 DOCUMENTATION_FOLDERPATH = None
 QA_PAIRS_GITHUB_REPO_URL = None
 QA_PAIRS_FOLDERPATH = None
+DOCUMENTATION_NEW_VERSIONS = None
+DOCUMENTATION_EOC_VERSIONS = None
+DOCUMENTATION_IDENTITY_ANALYTICS_VERSIONS = None
+DOCUMENTATION_IA_PRODUCT_VERSIONS = None
+DOCUMENTATION_IA_SELFMANAGED_VERSIONS = None
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Context manager to perform startup and shutdown actions"""
-    global REACT_AGENT_PROMPT, LANCEDB_FOLDERPATH, AUTHENTICATION_KEY, DOCUMENTATION_FOLDERPATH, QA_PAIRS_GITHUB_REPO_URL, QA_PAIRS_FOLDERPATH
+    global REACT_AGENT_PROMPT, LANCEDB_FOLDERPATH, AUTHENTICATION_KEY, DOCUMENTATION_FOLDERPATH, QA_PAIRS_GITHUB_REPO_URL, QA_PAIRS_FOLDERPATH, DOCUMENTATION_NEW_VERSIONS, DOCUMENTATION_EOC_VERSIONS, DOCUMENTATION_IDENTITY_ANALYTICS_VERSIONS, DOCUMENTATION_IA_PRODUCT_VERSIONS, DOCUMENTATION_IA_SELFMANAGED_VERSIONS
 
     lillisa_server_env = utils.LILLISA_SERVER_ENV_DICT
 
@@ -124,6 +131,41 @@ async def lifespan(_app: FastAPI):
         traceback.print_exc()
         utils.logger.critical("QA_PAIRS_FOLDERPATH not found in lillisa_server.env")
         raise ValueError("QA_PAIRS_FOLDERPATH not found in lillisa_server.env")
+    
+    if documentation_new_versions := lillisa_server_env["DOCUMENTATION_NEW_VERSIONS"]:
+        DOCUMENTATION_NEW_VERSIONS = str(documentation_new_versions).split(", ")
+    else:
+        traceback.print_exc()
+        utils.logger.critical("DOCUMENTATION_NEW_VERSIONS not found in lillisa_server.env")
+        raise ValueError("DOCUMENTATION_NEW_VERSIONS not found in lillisa_server.env")
+    
+    if documentation_eoc_versions := lillisa_server_env["DOCUMENTATION_EOC_VERSIONS"]:
+        DOCUMENTATION_EOC_VERSIONS = str(documentation_eoc_versions).split(", ")
+    else:
+        traceback.print_exc()
+        utils.logger.critical("DOCUMENTATION_EOC_VERSIONS not found in lillisa_server.env")
+        raise ValueError("DOCUMENTATION_EOC_VERSIONS not found in lillisa_server.env")
+    
+    if documentation_identity_analytics_versions := lillisa_server_env["DOCUMENTATION_IDENTITY_ANALYTICS_VERSIONS"]:
+        DOCUMENTATION_IDENTITY_ANALYTICS_VERSIONS = str(documentation_identity_analytics_versions).split(", ")
+    else:
+        traceback.print_exc()
+        utils.logger.critical("DOCUMENTATION_IDENTITY_ANALYTICS_VERSIONS not found in lillisa_server.env")
+        raise ValueError("DOCUMENTATION_IDENTITY_ANALYTICS_VERSIONS not found in lillisa_server.env")
+    
+    if documentation_ia_product_versions := lillisa_server_env["DOCUMENTATION_IA_PRODUCT_VERSIONS"]:
+        DOCUMENTATION_IA_PRODUCT_VERSIONS = str(documentation_ia_product_versions).split(", ")
+    else:
+        traceback.print_exc()
+        utils.logger.critical("DOCUMENTATION_IA_PRODUCT_VERSIONS not found in lillisa_server.env")
+        raise ValueError("DOCUMENTATION_IA_PRODUCT_VERSIONS not found in lillisa_server.env")
+    
+    if documentation_ia_selfmanaged_versions := lillisa_server_env["DOCUMENTATION_IA_SELFMANAGED_VERSIONS"]:
+        DOCUMENTATION_IA_SELFMANAGED_VERSIONS = str(documentation_ia_selfmanaged_versions).split(", ")
+    else:
+        traceback.print_exc()
+        utils.logger.critical("DOCUMENTATION_IA_SELFMANAGED_VERSIONS not found in lillisa_server.env")
+        raise ValueError("DOCUMENTATION_IA_SELFMANAGED_VERSIONS not found in lillisa_server.env")
 
     yield
     # anything to do on application close goes below
@@ -378,10 +420,10 @@ async def update_golden_qa_pairs(product: str, encrypted_key: str) -> str:
         qa_pattern = re.compile(r"Question:\s*(.*?)\nAnswer:\s*(.*)", re.DOTALL)
 
         if product == "IDDM":
-            product_versions = ["v7.4", "v8.0", "v8.1"]
+            product_versions = IDDM_PRODUCT_VERSIONS
             version_pattern = re.compile(r"v?\d+\.\d+", re.IGNORECASE)
         else:
-            product_versions = ["iap-2.0", "iap-2.2", "iap-3.0", "descartes", "descartes-dev", "version-1.5", "version-16"]
+            product_versions = IDA_PRODUCT_VERSIONS
             version_pattern = re.compile(r"\b(?:IAP[- ]\d+\.\d+|version[- ]\d+\.\d+|descartes(?:-dev)?)\b", re.IGNORECASE)
 
         for pair in qa_pairs:
@@ -540,13 +582,13 @@ async def rebuild_docs(encrypted_key: str) -> str:
 
         product_repos_dict = {
             "IDDM": [
-                ("https://github.com/radiantlogic-v8/documentation-new.git", ["v7.4", "v8.0", "v8.1"]),
-                ("https://github.com/radiantlogic-v8/documentation-eoc.git", ["latest"]),
+                ("https://github.com/radiantlogic-v8/documentation-new.git", DOCUMENTATION_NEW_VERSIONS),
+                ("https://github.com/radiantlogic-v8/documentation-eoc.git", DOCUMENTATION_EOC_VERSIONS),
             ],
             "IDA": [
-                ("https://github.com/radiantlogic-v8/documentation-identity-analytics.git", ["iap-2.0", "iap-2.2", "iap-3.0"]),
-                ("https://github.com/radiantlogic-v8/documentation-ia-product.git", ["descartes", "descartes-dev"]),
-                ("https://github.com/radiantlogic-v8/documentation-ia-selfmanaged.git", ["version-1.5", "version-16"]),
+                ("https://github.com/radiantlogic-v8/documentation-identity-analytics.git", DOCUMENTATION_IDENTITY_ANALYTICS_VERSIONS),
+                ("https://github.com/radiantlogic-v8/documentation-ia-product.git", DOCUMENTATION_IA_PRODUCT_VERSIONS),
+                ("https://github.com/radiantlogic-v8/documentation-ia-selfmanaged.git", DOCUMENTATION_IA_SELFMANAGED_VERSIONS),
             ],
         }
 

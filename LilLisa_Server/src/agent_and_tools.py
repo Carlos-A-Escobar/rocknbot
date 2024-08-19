@@ -30,6 +30,9 @@ OPENAI_CLIENT = None
 QA_SYSTEM_PROMPT = None
 QA_USER_PROMPT = None
 
+IDDM_PRODUCT_VERSIONS = None
+IDA_PRODUCT_VERSIONS = None
+
 lillisa_server_env = utils.LILLISA_SERVER_ENV_DICT
 if fp := lillisa_server_env["SPEEDICT_FOLDERPATH"]:
     speedict_folderpath = str(fp)
@@ -93,7 +96,6 @@ else:
     utils.logger.critical("AWS_SECRET_ACCESS_KEY not found in lillisa_server.env")
     raise ValueError("AWS_SECRET_ACCESS_KEY not found in lillisa_server.env")
 
-
 with open(aws_secret_access_key_filepath, "r", encoding="utf-8") as file:
     aws_secret_access_key = file.read()
 
@@ -112,6 +114,20 @@ if not os.path.exists(lancedb_folderpath):
     utils.logger.critical("%s not found", lancedb_folderpath)
     raise NotImplementedError("%s not found" % lancedb_folderpath)  # pylint: disable=consider-using-f-string
 
+if iddm_product_versions := lillisa_server_env["IDDM_PRODUCT_VERSIONS"]:
+    IDDM_PRODUCT_VERSIONS = str(iddm_product_versions).split(", ")
+else:
+    traceback.print_exc()
+    utils.logger.critical("IDDM_PRODUCT_VERSIONS not found in lillisa_server.env")
+    raise ValueError("IDDM_PRODUCT_VERSIONS not found in lillisa_server.env")
+
+if ida_product_versions := lillisa_server_env["IDA_PRODUCT_VERSIONS"]:
+    IDA_PRODUCT_VERSIONS = str(ida_product_versions).split(", ")
+else:
+    traceback.print_exc()
+    utils.logger.critical("IDA_PRODUCT_VERSIONS not found in lillisa_server.env")
+    raise ValueError("IDA_PRODUCT_VERSIONS not found in lillisa_server.env")
+
 
 # Establish connection to LanceDB
 db = lancedb.connect(lancedb_folderpath)
@@ -128,8 +144,6 @@ IDDM_INDEX = VectorStoreIndex.from_vector_store(vector_store=iddm_vector_store)
 IDA_INDEX = VectorStoreIndex.from_vector_store(vector_store=ida_vector_store)
 IDDM_QA_PAIRS_INDEX = VectorStoreIndex.from_vector_store(vector_store=iddm_qa_pairs_vector_store)
 IDA_QA_PAIRS_INDEX = VectorStoreIndex.from_vector_store(vector_store=ida_qa_pairs_vector_store)
-
-
 IDDM_RETRIEVER = IDDM_INDEX.as_retriever(similarity_top_k=50)
 IDA_RETRIEVER = IDA_INDEX.as_retriever(similarity_top_k=50)
 IDDM_QA_PAIRS_RETRIEVER = IDDM_QA_PAIRS_INDEX.as_retriever(similarity_top_k=8)
@@ -213,21 +227,21 @@ def answer_from_document_retrieval(
 
     product_enum = PRODUCT.get_product(product)
     if product_enum == PRODUCT.IDDM:
-        product_versions = ["v7.4", "v8.0", "v8.1"]
+        product_versions = IDDM_PRODUCT_VERSIONS
         version_pattern = re.compile(r"v?\d+\.\d+", re.IGNORECASE)
         document_index = IDDM_INDEX
         qa_pairs_index = IDDM_QA_PAIRS_INDEX
         default_document_retriever = IDDM_RETRIEVER
         default_qa_pairs_retriever = IDDM_QA_PAIRS_RETRIEVER
     else:
-        product_versions = ["iap-2.0", "iap-2.2", "iap-3.0", "descartes", "descartes-dev", "version-1.5", "version-16"]
+        product_versions = IDA_PRODUCT_VERSIONS
         version_pattern = re.compile(r"\b(?:IAP[- ]\d+\.\d+|version[- ]\d+\.\d+|descartes(?:-dev)?)\b", re.IGNORECASE)
         document_index = IDA_INDEX
         qa_pairs_index = IDA_QA_PAIRS_INDEX
         default_document_retriever = IDA_RETRIEVER
         default_qa_pairs_retriever = IDA_QA_PAIRS_RETRIEVER
 
-    matched_versions = get_matching_versions(query, product_versions, version_pattern)
+    matched_versions = get_matching_versions(original_query, product_versions, version_pattern)
 
     if matched_versions:
         qa_system_prompt += f"\n10. Mention the product version(s) you used to craft your response were '{' and '.join(matched_versions)}'"
